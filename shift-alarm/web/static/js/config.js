@@ -38,13 +38,22 @@ async function loadShiftConfig() {
                     ${isRest ? `
                         <span style="color:var(--text-muted);font-size:13px">休息日无需设置时间</span>
                     ` : `
-                        <label>开始 <input type="time"
-                            data-shift="${s.shift_type}" data-field="start"
-                            value="${minutesToTime(s.start_time)}"></label>
-                        <label>结束 <input type="time"
-                            data-shift="${s.shift_type}" data-field="end"
-                            value="${minutesToTime(s.end_time % 1440)}"></label>
-                        ${s.end_time >= 1440 ? '<span style="font-size:11px;color:var(--accent)">跨日</span>' : ''}
+                        <div class="shift-time-group">
+                            <label>开始 <input type="time"
+                                data-shift="${s.shift_type}" data-field="start"
+                                value="${minutesToTime(s.start_time)}"
+                                onchange="autoCheckOvernight(this)"></label>
+                            <span class="time-sep">→</span>
+                            <label>结束 <input type="time"
+                                data-shift="${s.shift_type}" data-field="end"
+                                value="${minutesToTime(s.end_time % 1440)}"
+                                onchange="autoCheckOvernight(this)"></label>
+                            <label class="overnight-label">
+                                <input type="checkbox"
+                                    data-shift="${s.shift_type}" data-field="overnight"
+                                    ${s.end_time >= 1440 ? 'checked' : ''}> 次日
+                            </label>
+                        </div>
                     `}
                     <label>提前提醒 <input type="number"
                         data-shift="${s.shift_type}" data-field="reminder"
@@ -55,17 +64,29 @@ async function loadShiftConfig() {
             </div>
             `;
         }).join('');
-
-        // 跨日期复选框事件
-        list.querySelectorAll('input[data-field="end"]').forEach(input => {
-            const card = input.closest('.shift-config-card');
-            const overnightSpan = document.createElement('span');
-            overnightSpan.style.cssText = 'font-size:11px;color:var(--accent);margin-left:4px';
-            overnightSpan.textContent = '跨日?';
-            input.parentElement.appendChild(overnightSpan);
-        });
     } catch (e) {
         console.error('加载班次配置失败:', e);
+    }
+}
+
+/**
+ * 当用户修改开始/结束时间时，自动检测是否需要勾选跨日复选框。
+ * 仅自动勾选（结束时间 <= 开始时间时），不自动取消勾选。
+ */
+function autoCheckOvernight(input) {
+    const card = input.closest('.shift-config-card');
+    if (!card) return;
+    const startEl = card.querySelector('[data-field="start"]');
+    const endEl = card.querySelector('[data-field="end"]');
+    const overnightEl = card.querySelector('[data-field="overnight"]');
+    if (!startEl || !endEl || !overnightEl) return;
+
+    const startVal = timeToMinutes(startEl.value);
+    const endVal = timeToMinutes(endEl.value);
+
+    // 结束时间 <= 开始时间，说明很可能跨日了，自动勾选
+    if (endVal <= startVal) {
+        overnightEl.checked = true;
     }
 }
 
@@ -74,16 +95,17 @@ async function saveShiftConfig(shiftType) {
     if (!card) return;
 
     const nameEl = card.querySelector('.name');
-    const startEl = card.querySelector(`[data-field="start"]`);
-    const endEl = card.querySelector(`[data-field="end"]`);
-    const reminderEl = card.querySelector(`[data-field="reminder"]`);
+    const startEl = card.querySelector('[data-field="start"]');
+    const endEl = card.querySelector('[data-field="end"]');
+    const reminderEl = card.querySelector('[data-field="reminder"]');
+    const overnightEl = card.querySelector('[data-field="overnight"]');
 
     const startTime = startEl ? timeToMinutes(startEl.value) : 0;
     let endTime = endEl ? timeToMinutes(endEl.value) : 0;
 
-    // 如果结束时间 <= 开始时间，视为跨日
-    if (endEl && endTime <= startTime && endTime < 720) {
-        endTime += 24 * 60; // 加24小时（跨日）
+    // 读取跨日复选框状态：勾选则在结束时间上加上 24 小时
+    if (overnightEl && overnightEl.checked) {
+        endTime += 24 * 60;
     }
 
     const body = {
@@ -299,6 +321,8 @@ async function saveCyclePattern() {
             body: JSON.stringify({ patterns }),
         });
         showToast('循环顺序已保存', 'success');
+        // 保存后通知后端重算闹钟
+        await refreshAlarmsAfterChange();
     } catch (e) {
         showToast('保存失败: ' + e.message, 'error');
     }
@@ -368,12 +392,38 @@ async function saveScheduleSettings() {
         STATE.cycleStartDate = startDate;
         STATE.cycleRefIndex = refIndex;
         showToast('排班设置已保存', 'success');
+        // 保存后通知后端重算闹钟
+        await refreshAlarmsAfterChange();
     } catch (e) {
         showToast('保存失败: ' + e.message, 'error');
     }
 }
 
 // ─── 闹钟列表 ──────────────────────────────────────
+
+let _alarmsRefreshTimer = null;
+
+async function refreshAlarmsAfterChange() {
+    // 排班设置变更后通知后端重算并刷新闹钟列表
+    try {
+        const result = await api('/alarms/reschedule', { method: 'POST' });
+        if (result.ok) {
+            console.log('闹钟已重新调度');
+        } else {
+            console.warn('闹钟重调度返回:', result.message);
+        }
+    } catch (e) {
+        console.error('闹钟重调度失败:', e);
+    }
+    // 无论重调度是否成功，都重新加载闹钟列表
+    if (STATE.currentPage === 'alarms') {
+        await loadAlarms();
+    }
+    // 同时刷新仪表盘（今日/明日卡片）
+    if (STATE.currentPage === 'dashboard') {
+        await loadDashboard();
+    }
+}
 
 async function loadAlarms() {
     try {
@@ -395,6 +445,23 @@ async function loadAlarms() {
         `).join('');
     } catch (e) {
         console.error('加载闹钟失败:', e);
+    }
+}
+
+// 闹钟页面自动刷新（每30秒）
+function startAlarmsAutoRefresh() {
+    stopAlarmsAutoRefresh();
+    _alarmsRefreshTimer = setInterval(() => {
+        if (STATE.currentPage === 'alarms') {
+            loadAlarms();
+        }
+    }, 30000);
+}
+
+function stopAlarmsAutoRefresh() {
+    if (_alarmsRefreshTimer) {
+        clearInterval(_alarmsRefreshTimer);
+        _alarmsRefreshTimer = null;
     }
 }
 

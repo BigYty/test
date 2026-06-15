@@ -484,6 +484,59 @@ body {
     font-family: inherit;
 }
 
+/* 时间组（开始/结束/跨日） */
+.shift-time-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+    flex-shrink: 0;
+}
+
+.shift-time-group label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+}
+
+.shift-time-group input[type="time"] {
+    padding: 3px 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 12px;
+    font-family: inherit;
+    width: 100px;
+}
+
+.time-sep {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin: 0 2px;
+}
+
+.overnight-label {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    white-space: nowrap;
+    margin-left: 2px;
+}
+
+.overnight-label input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    accent-color: var(--accent);
+}
+
 /* ─── 模式选择器 ──────────────────────────────────── */
 
 .mode-selector {

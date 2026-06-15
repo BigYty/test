@@ -50,11 +50,48 @@ def create_tray_icon():
     return icon_path
 
 
-def run_web_server(repo, host="127.0.0.1", port=8765):
+# 延迟绑定的调度器引用，用于 Web API 路由在调度器就绪后访问
+_scheduler_ref: dict = {"instance": None}
+
+
+def _create_reschedule_callback(repo):
+    """创建一个可延迟绑定的闹钟重调度回调。
+
+    Web 服务器在调度器之前启动，因此回调使用可变引用在调用时查找调度器。
+    """
+    from config.constants import WorkMode
+
+    def _reschedule():
+        scheduler = _scheduler_ref.get("instance")
+        if scheduler is None:
+            logger.warning("重调度请求被忽略：调度器尚未就绪")
+            return
+        settings = repo.load_settings()
+        try:
+            cycle_start = (
+                date.fromisoformat(settings.cycle_start_date)
+                if settings.cycle_start_date
+                else date.today()
+            )
+        except ValueError:
+            cycle_start = date.today()
+        cycle_pattern = repo.get_cycle_pattern()
+        scheduler.reschedule_all(
+            settings.work_mode,
+            cycle_start,
+            cycle_pattern,
+            settings.cycle_reference_index,
+        )
+        logger.info("已通过 API 触发闹钟重调度")
+
+    return _reschedule
+
+
+def run_web_server(repo, reschedule_callback=None, host="127.0.0.1", port=8765):
     """在独立线程中启动 FastAPI 服务器"""
     from web.server import create_app
 
-    app = create_app(repo)
+    app = create_app(repo, reschedule_callback=reschedule_callback)
 
     import uvicorn
     uvicorn.run(app, host=host, port=port, log_level="warning")
@@ -193,16 +230,20 @@ def main():
     HOST = "127.0.0.1"
     PORT = 8765
 
+    # 创建延迟绑定的重调度回调（调度器尚未创建，回调内部使用可变引用）
+    reschedule_callback = _create_reschedule_callback(repo)
+
     # 启动 Web 服务器（后台线程）
     server_thread = threading.Thread(
-        target=run_web_server, args=(repo, HOST, PORT),
+        target=run_web_server, args=(repo, reschedule_callback, HOST, PORT),
         daemon=True,
     )
     server_thread.start()
     logger.info(f"Web 服务器已启动: http://{HOST}:{PORT}")
 
-    # 启动闹钟调度器
+    # 启动闹钟调度器并注册到全局引用
     scheduler = run_alarm_scheduler(repo, send_windows_notification)
+    _scheduler_ref["instance"] = scheduler
     logger.info("闹钟调度器已启动")
 
     # 刷新节假日数据

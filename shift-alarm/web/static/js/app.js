@@ -56,12 +56,23 @@ function navigateTo(page) {
     document.querySelectorAll('.page').forEach(el => {
         el.classList.toggle('active', el.id === `page-${page}`);
     });
+    // 停止之前的闹钟自动刷新（如果离开闹钟页面）
+    if (page !== 'alarms' && typeof stopAlarmsAutoRefresh === 'function') {
+        stopAlarmsAutoRefresh();
+    }
+
     // 加载页面数据
     switch (page) {
         case 'dashboard': loadDashboard(); break;
         case 'shifts': loadShiftConfig(); break;
         case 'schedule': loadScheduleSetup(); break;
-        case 'alarms': loadAlarms(); break;
+        case 'alarms':
+            loadAlarms();
+            // 启动闹钟页面自动刷新
+            if (typeof startAlarmsAutoRefresh === 'function') {
+                startAlarmsAutoRefresh();
+            }
+            break;
         case 'settings': loadSettings(); break;
     }
 }

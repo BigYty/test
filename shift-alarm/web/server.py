@@ -2,6 +2,7 @@
 
 import os
 import sys
+from typing import Callable
 
 # 将项目根目录添加到 sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,8 +17,16 @@ from web.api_routes import create_router
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 
-def create_app(repo: Repository | None = None) -> FastAPI:
-    """创建 FastAPI 应用"""
+def create_app(
+    repo: Repository | None = None,
+    reschedule_callback: Callable[[], None] | None = None,
+) -> FastAPI:
+    """创建 FastAPI 应用
+
+    Args:
+        repo: 数据库仓库实例
+        reschedule_callback: 闹钟重调度回调，由 main.py 在调度器就绪后设置
+    """
     app = FastAPI(title="排班闹钟", version="1.0.0")
 
     # CORS
@@ -35,7 +44,7 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         repo.seed_defaults()
 
     # 注册 API 路由
-    api_router = create_router(repo)
+    api_router = create_router(repo, reschedule_callback)
     app.include_router(api_router, prefix="/api")
 
     # 静态文件

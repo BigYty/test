@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import Callable, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -54,7 +54,10 @@ class SettingsUpdate(BaseModel):
 
 # ─── 路由工厂 ───────────────────────────────────────
 
-def create_router(repo: Repository) -> APIRouter:
+def create_router(
+    repo: Repository,
+    reschedule_callback: Callable[[], None] | None = None,
+) -> APIRouter:
     router = APIRouter()
     engine = ShiftEngine(repo)
     holiday_svc = HolidayService(repo)
@@ -129,6 +132,8 @@ def create_router(repo: Repository) -> APIRouter:
             is_active=body.is_active,
         )
         repo.update_shift(config)
+        # 班次时间/提醒变更后重算闹钟
+        _try_reschedule(reschedule_callback)
         return {"ok": True}
 
     # ─── 工作模式 ─────────────────────────────────────
@@ -144,6 +149,8 @@ def create_router(repo: Repository) -> APIRouter:
         settings = repo.load_settings()
         settings.work_mode = mode
         repo.save_settings(settings)
+        # 工作模式变更也需要重算闹钟
+        _try_reschedule(reschedule_callback)
         return {"ok": True, "work_mode": mode.value}
 
     # ─── 排班循环 (特殊工种) ──────────────────────────
@@ -175,6 +182,8 @@ def create_router(repo: Repository) -> APIRouter:
             patterns.append(CyclePattern(position=i, shift_type=st))
 
         repo.save_cycle_pattern(patterns)
+        # 保存后触发闹钟重调度
+        _try_reschedule(reschedule_callback)
         return {"ok": True, "count": len(patterns)}
 
     # ─── 日历视图 ─────────────────────────────────────
@@ -312,6 +321,8 @@ def create_router(repo: Repository) -> APIRouter:
         settings.snooze_minutes = body.snooze_minutes
         settings.alarm_volume = body.alarm_volume
         repo.save_settings(settings)
+        # 保存后触发闹钟重调度
+        _try_reschedule(reschedule_callback)
         return {"ok": True}
 
     @router.put("/settings/first-run-done")
@@ -331,4 +342,28 @@ def create_router(repo: Repository) -> APIRouter:
         scheduler = AlarmScheduler(repo)
         return scheduler.get_upcoming_alarms(limit=20)
 
+    @router.post("/alarms/reschedule")
+    def trigger_reschedule():
+        """手动触发闹钟重调度（排班设置变更后由前端调用）"""
+        if reschedule_callback is None:
+            return {
+                "ok": False,
+                "message": "闹钟调度器尚未初始化，请稍后重试或重启应用。"
+            }
+        try:
+            reschedule_callback()
+            return {"ok": True, "message": "闹钟已重新调度"}
+        except Exception as e:
+            return {"ok": False, "message": f"重调度失败: {e}"}
+
     return router
+
+
+def _try_reschedule(callback: Callable[[], None] | None) -> None:
+    """安全地触发重调度回调，忽略未初始化或异常情况"""
+    if callback is None:
+        return
+    try:
+        callback()
+    except Exception:
+        pass  # 静默失败，不影响保存操作的返回
