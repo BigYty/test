@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>排班闹钟</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <!-- 侧边栏 -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-icon">⏰</span>
+            <span class="brand-text">排班闹钟</span>
+        </div>
+        <ul class="nav-menu">
+            <li class="nav-item active" data-page="dashboard">
+                <span class="nav-icon">📅</span>
+                <span class="nav-text">工作台</span>
+            </li>
+            <li class="nav-item" data-page="shifts">
+                <span class="nav-icon">⚙️</span>
+                <span class="nav-text">班次配置</span>
+            </li>
+            <li class="nav-item" data-page="schedule">
+                <span class="nav-icon">🔄</span>
+                <span class="nav-text">排班设置</span>
+            </li>
+            <li class="nav-item" data-page="alarms">
+                <span class="nav-icon">🔔</span>
+                <span class="nav-text">闹钟列表</span>
+            </li>
+            <li class="nav-item" data-page="settings">
+                <span class="nav-icon">🛠️</span>
+                <span class="nav-text">系统设置</span>
+            </li>
+        </ul>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="main-content">
+
+        <!-- 工作台 -->
+        <section class="page active" id="page-dashboard">
+            <header class="page-header">
+                <h1>📅 工作台</h1>
+                <div class="header-actions">
+                    <button class="btn btn-outline" id="btn-refresh-holiday">🔄 刷新节假日</button>
+                </div>
+            </header>
+
+            <!-- 今日/明日卡片 -->
+            <div class="today-cards">
+                <div class="card today-card" id="card-today">
+                    <div class="card-badge">今天</div>
+                    <div class="shift-icon" id="today-icon">☀️</div>
+                    <div class="shift-name" id="today-name">--</div>
+                    <div class="shift-time" id="today-time">--</div>
+                    <div class="shift-label" id="today-label"></div>
+                </div>
+                <div class="card today-card" id="card-tomorrow">
+                    <div class="card-badge secondary">明天</div>
+                    <div class="shift-icon" id="tomorrow-icon">☀️</div>
+                    <div class="shift-name" id="tomorrow-name">--</div>
+                    <div class="shift-time" id="tomorrow-time">--</div>
+                    <div class="shift-label" id="tomorrow-label"></div>
+                </div>
+            </div>
+
+            <!-- 工作模式指示 -->
+            <div class="card mode-card">
+                <div class="mode-indicator">
+                    <span class="mode-label">当前模式：</span>
+                    <span class="mode-value" id="current-mode">正常工作表</span>
+                </div>
+                <div class="mode-desc" id="mode-desc">根据法定节假日自动调整</div>
+            </div>
+
+            <!-- 月历 -->
+            <div class="card calendar-card">
+                <div class="calendar-header">
+                    <button class="btn btn-icon" id="cal-prev">◀</button>
+                    <h2 id="cal-title">2026年 6月</h2>
+                    <button class="btn btn-icon" id="cal-next">▶</button>
+                    <button class="btn btn-outline btn-sm" id="cal-today">今天</button>
+                </div>
+                <div class="calendar-grid" id="calendar-grid">
+                    <!-- JS 动态填充 -->
+                </div>
+                <div class="calendar-legend">
+                    <span class="legend-item"><span class="dot" style="background:#FFB74D"></span> 白班</span>
+                    <span class="legend-item"><span class="dot" style="background:#5C6BC0"></span> 夜班(A)</span>
+                    <span class="legend-item"><span class="dot" style="background:#66BB6A"></span> 早班</span>
+                    <span class="legend-item"><span class="dot" style="background:#BDBDBD"></span> 休息</span>
+                    <span class="legend-item"><span class="dot" style="background:#4527A0"></span> 夜班(B)</span>
+                    <span class="legend-item"><span class="dot" style="background:#EF5350"></span> 值班</span>
+                    <span class="legend-item"><span class="dot" style="border:2px solid #FFD700; background:transparent"></span> 节假日</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 班次配置 -->
+        <section class="page" id="page-shifts">
+            <header class="page-header">
+                <h1>⚙️ 班次配置</h1>
+            </header>
+            <div class="card">
+                <p class="text-muted">配置每种班次的起止时间和提醒设置。提醒时间不可跨天选择。</p>
+            </div>
+            <div class="shift-config-list" id="shift-config-list">
+                <!-- JS 动态填充 -->
+            </div>
+        </section>
+
+        <!-- 排班设置 -->
+        <section class="page" id="page-schedule">
+            <header class="page-header">
+                <h1>🔄 排班设置</h1>
+            </header>
+
+            <!-- 工作模式选择 -->
+            <div class="card">
+                <h3>工作模式</h3>
+                <div class="mode-selector">
+                    <label class="mode-option" id="mode-normal">
+                        <input type="radio" name="work-mode" value="1" checked>
+                        <div class="mode-option-content">
+                            <div class="mode-option-title">🏢 正常工作表</div>
+                            <div class="mode-option-desc">白班 / 值班 / 休息 · 自动同步法定节假日</div>
+                        </div>
+                    </label>
+                    <label class="mode-option" id="mode-special">
+                        <input type="radio" name="work-mode" value="2">
+                        <div class="mode-option-content">
+                            <div class="mode-option-title">🔧 特殊工种</div>
+                            <div class="mode-option-desc">全部6种班次 · 自定义循环顺序</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- 特殊工种：循环顺序 -->
+            <div class="card" id="cycle-config-card" style="display:none;">
+                <h3>排班循环顺序</h3>
+                <p class="text-muted">按顺序排列班次，系统自动循环。如：白→夜→休→休 = 4天一个循环。</p>
+                <div class="cycle-builder" id="cycle-builder">
+                    <!-- JS 动态填充 -->
+                </div>
+                <div class="cycle-controls">
+                    <button class="btn btn-primary" id="btn-save-cycle">💾 保存循环顺序</button>
+                </div>
+                <div class="cycle-preview" id="cycle-preview">
+                    <h4>预览（未来7天）：</h4>
+                    <div class="preview-list" id="preview-list"></div>
+                </div>
+            </div>
+
+            <!-- 排班起始日期 -->
+            <div class="card">
+                <h3>排班起始设置</h3>
+                <div class="form-group">
+                    <label>起始日期</label>
+                    <input type="date" class="form-input" id="input-start-date">
+                </div>
+                <div class="form-group">
+                    <label>起始日期对应的循环位置（第几个班次）</label>
+                    <select class="form-input" id="input-ref-index">
+                        <option value="0">第 1 个</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" id="btn-save-schedule-settings">💾 保存设置</button>
+            </div>
+        </section>
+
+        <!-- 闹钟列表 -->
+        <section class="page" id="page-alarms">
+            <header class="page-header">
+                <h1>🔔 闹钟列表</h1>
+            </header>
+            <div class="card">
+                <p class="text-muted">以下为未来即将触发的闹钟提醒。</p>
+                <div class="alarm-list" id="alarm-list">
+                    <div class="empty-state">暂无即将触发的闹钟</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 系统设置 -->
+        <section class="page" id="page-settings">
+            <header class="page-header">
+                <h1>🛠️ 系统设置</h1>
+            </header>
+            <div class="card">
+                <div class="form-group">
+                    <label>延迟（贪睡）分钟数</label>
+                    <input type="number" class="form-input" id="input-snooze" min="1" max="60" value="5">
+                </div>
+                <div class="form-group">
+                    <label>闹钟音量 (%)</label>
+                    <input type="range" class="form-range" id="input-volume" min="0" max="100" value="80">
+                    <span id="volume-display">80%</span>
+                </div>
+                <button class="btn btn-primary" id="btn-save-settings">💾 保存设置</button>
+            </div>
+            <div class="card">
+                <h3>节假日数据</h3>
+                <p class="text-muted">手动刷新中国法定节假日数据。</p>
+                <div class="form-group">
+                    <label>年份</label>
+                    <input type="number" class="form-input" id="input-holiday-year" min="2024" max="2030" value="2026">
+                </div>
+                <button class="btn btn-outline" id="btn-refresh-holiday2">🔄 刷新节假日数据</button>
+            </div>
+        </section>
+    </main>
+
+    <!-- Toast -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="/js/app.js"></script>
+    <script src="/js/calendar.js"></script>
+    <script src="/js/config.js"></script>
+</body>
+</html>
