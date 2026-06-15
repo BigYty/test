@@ -156,94 +156,139 @@ async function loadScheduleSetup() {
         console.error('加载排班设置失败:', e);
     }
 
-    // 事件绑定
-    document.querySelectorAll('input[name="work-mode"]').forEach(radio => {
-        radio.addEventListener('change', async function () {
-            const mode = parseInt(this.value);
-            document.getElementById('cycle-config-card').style.display =
-                mode === 2 ? '' : 'none';
-            try {
-                await api('/work-mode', {
-                    method: 'PUT',
-                    body: JSON.stringify({ work_mode: mode }),
-                });
-                STATE.workMode = mode;
-                showToast('工作模式已切换', 'success');
-            } catch (e) {
-                showToast('切换失败', 'error');
-            }
-        });
-    });
+    // 事件绑定（使用标志避免重复绑定）
+    if (!loadScheduleSetup._bound) {
+        loadScheduleSetup._bound = true;
 
-    document.getElementById('btn-save-cycle').addEventListener('click', saveCyclePattern);
-    document.getElementById('btn-save-schedule-settings').addEventListener('click', saveScheduleSettings);
-    document.getElementById('input-start-date').addEventListener('change', updateCyclePreview);
-    document.getElementById('input-ref-index').addEventListener('change', updateCyclePreview);
+        document.querySelectorAll('input[name="work-mode"]').forEach(radio => {
+            radio.addEventListener('change', async function () {
+                const mode = parseInt(this.value);
+                document.getElementById('cycle-config-card').style.display =
+                    mode === 2 ? '' : 'none';
+                try {
+                    await api('/work-mode', {
+                        method: 'PUT',
+                        body: JSON.stringify({ work_mode: mode }),
+                    });
+                    STATE.workMode = mode;
+                    showToast('工作模式已切换', 'success');
+                } catch (e) {
+                    showToast('切换失败', 'error');
+                }
+            });
+        });
+
+        document.getElementById('btn-save-cycle').addEventListener('click', saveCyclePattern);
+        document.getElementById('btn-clear-cycle').addEventListener('click', clearCycle);
+        document.getElementById('btn-save-schedule-settings').addEventListener('click', saveScheduleSettings);
+        document.getElementById('input-start-date').addEventListener('change', updateCyclePreview);
+        document.getElementById('input-ref-index').addEventListener('change', updateCyclePreview);
+    }
 }
 
 async function loadCyclePattern() {
     try {
         const patterns = await api('/cycle-pattern');
         STATE.cyclePattern = patterns;
-
-        renderCycleBuilder(patterns);
-        renderAvailableShifts(patterns);
+        renderCyclePalette();
+        renderCycleSequence();
         updateCyclePreview();
     } catch (e) {
         console.error('加载循环失败:', e);
     }
 }
 
-function renderCycleBuilder(patterns) {
-    const builder = document.getElementById('cycle-builder');
-    builder.innerHTML = patterns.map((p, i) => `
-        <span class="cycle-chip" style="background:${SHIFT_COLORS_MAP[p.shift_type] || '#999'}">
-            ${i + 1}. ${p.shift_name || SHIFT_NAMES_MAP[p.shift_type]}
-            <span class="remove" onclick="removeFromCycle(${i})">×</span>
-        </span>
+// ─── 新型号：点选式循环构建器 ──────────────────────
+
+function renderCyclePalette() {
+    // 渲染可选班次面板 —— 始终显示全部6种
+    const palette = document.getElementById('cycle-palette');
+    if (!palette) return;
+
+    palette.innerHTML = Object.entries(SHIFT_NAMES_MAP).map(([type, name]) => `
+        <div class="cycle-palette-btn"
+             style="background:${SHIFT_COLORS_MAP[type] || '#999'}"
+             data-shift-type="${type}"
+             title="点击添加到循环末尾">
+            ${SHIFT_ICONS[type] || ''} ${name}
+        </div>
     `).join('');
+
+    // 绑定点击事件
+    palette.querySelectorAll('.cycle-palette-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const shiftType = parseInt(this.dataset.shiftType);
+            addToCycle(shiftType);
+        });
+    });
 }
 
-function renderAvailableShifts(patterns) {
-    const usedTypes = new Set(patterns.map(p => p.shift_type));
-    // 找到已存在的 available 容器或创建新的
-    let container = document.getElementById('cycle-available');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'cycle-available';
-        container.className = 'cycle-available';
-        const builder = document.getElementById('cycle-builder');
-        builder.parentElement.insertBefore(container, builder.nextSibling);
+function renderCycleSequence() {
+    // 渲染已选循环顺序
+    const seq = document.getElementById('cycle-sequence');
+    const hint = document.getElementById('cycle-empty-hint');
+    if (!seq) return;
+
+    if (!STATE.cyclePattern.length) {
+        seq.innerHTML = '';
+        seq.appendChild(hint || createEmptyHint());
+        return;
     }
 
-    container.innerHTML = Object.entries(SHIFT_NAMES_MAP).map(([type, name]) => `
-        <span class="cycle-chip-available"
-              onclick="addToCycle(${type})"
-              style="${usedTypes.includes(parseInt(type)) ? 'opacity:0.4' : ''}">
-            + ${name}
-        </span>
+    // 移除 hint
+    if (hint) hint.remove();
+
+    seq.innerHTML = STATE.cyclePattern.map((p, i) => `
+        <div class="cycle-slot"
+             style="background:${p.color || SHIFT_COLORS_MAP[p.shift_type] || '#999'}"
+             data-index="${i}"
+             title="点击移除">
+            <span class="slot-num">${i + 1}</span>
+            ${p.shift_name || SHIFT_NAMES_MAP[p.shift_type]}
+            <span class="slot-remove">×</span>
+        </div>
     `).join('');
+
+    // 绑定点击移除事件
+    seq.querySelectorAll('.cycle-slot').forEach(slot => {
+        slot.addEventListener('click', function () {
+            const index = parseInt(this.dataset.index);
+            removeFromCycle(index);
+        });
+    });
+}
+
+function createEmptyHint() {
+    const hint = document.createElement('div');
+    hint.id = 'cycle-empty-hint';
+    hint.className = 'cycle-empty-hint';
+    hint.textContent = '👆 点击上方班次按钮开始设置排班循环';
+    return hint;
 }
 
 function addToCycle(shiftType) {
-    const p = STATE.cyclePattern;
-    p.push({
-        position: p.length,
-        shift_type: parseInt(shiftType),
+    STATE.cyclePattern.push({
+        position: STATE.cyclePattern.length,
+        shift_type: shiftType,
         shift_name: SHIFT_NAMES_MAP[shiftType],
         color: SHIFT_COLORS_MAP[shiftType],
     });
-    renderCycleBuilder(p);
-    renderAvailableShifts(p);
+    renderCycleSequence();
     updateCyclePreview();
 }
 
 function removeFromCycle(index) {
     STATE.cyclePattern.splice(index, 1);
-    STATE.cyclePattern.forEach((p, i) => p.position = i);
-    renderCycleBuilder(STATE.cyclePattern);
-    renderAvailableShifts(STATE.cyclePattern);
+    STATE.cyclePattern.forEach((p, i) => { p.position = i; });
+    renderCycleSequence();
     updateCyclePreview();
+}
+
+function clearCycle() {
+    STATE.cyclePattern = [];
+    renderCycleSequence();
+    updateCyclePreview();
+    showToast('循环已清空，请重新选择', '');
 }
 
 async function saveCyclePattern() {

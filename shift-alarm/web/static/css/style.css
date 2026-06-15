@@ -521,31 +521,64 @@ body {
     color: var(--text-muted);
 }
 
-/* ─── 循环构建器 ──────────────────────────────────── */
+/* ─── 循环构建器（点选式）────────────────────────── */
 
-.cycle-builder {
+.cycle-palette {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+}
+
+.cycle-palette-btn {
+    padding: 10px 18px;
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition);
+    color: white;
+    user-select: none;
+}
+
+.cycle-palette-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.cycle-palette-btn:active {
+    transform: translateY(0);
+}
+
+.cycle-sequence {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
-    min-height: 60px;
+    min-height: 52px;
     padding: 12px;
-    border: 2px dashed var(--border);
+    border: 2px dashed var(--accent);
     border-radius: var(--radius);
     margin-bottom: 12px;
     align-items: center;
+    background: var(--accent-light);
 }
 
-.cycle-builder:empty::after {
-    content: "从下方拖动班次到此处，或点击添加";
+.cycle-empty-hint {
     color: var(--text-muted);
     font-size: 13px;
+    width: 100%;
+    text-align: center;
 }
 
-.cycle-chip {
-    display: inline-flex;
+.cycle-slot {
+    display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
+    gap: 4px;
+    padding: 8px 14px;
     border-radius: 20px;
     font-size: 13px;
     font-weight: 500;
@@ -553,45 +586,42 @@ body {
     cursor: pointer;
     transition: all var(--transition);
     user-select: none;
+    position: relative;
 }
 
-.cycle-chip:hover {
+.cycle-slot:hover {
     transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
-.cycle-chip .remove {
+.cycle-slot .slot-num {
+    background: rgba(255,255,255,0.3);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    margin-right: 2px;
+}
+
+.cycle-slot .slot-remove {
     margin-left: 4px;
-    cursor: pointer;
     opacity: 0.7;
-    font-size: 16px;
-    line-height: 1;
+    font-size: 14px;
+    font-weight: 700;
 }
 
-.cycle-chip .remove:hover { opacity: 1; }
+.cycle-slot:hover .slot-remove { opacity: 1; }
 
-.cycle-available {
+.cycle-actions {
     display: flex;
     gap: 8px;
-    flex-wrap: wrap;
-    margin-bottom: 12px;
+    align-items: center;
+    margin-bottom: 16px;
 }
-
-.cycle-chip-available {
-    padding: 6px 14px;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    font-size: 13px;
-    cursor: pointer;
-    transition: all var(--transition);
-    background: var(--bg-card);
-}
-
-.cycle-chip-available:hover {
-    border-color: var(--accent);
-    background: var(--accent-light);
-}
-
-.cycle-controls { margin-bottom: 16px; }
 
 .cycle-preview {
     padding-top: 16px;

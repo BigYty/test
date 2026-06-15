@@ -142,15 +142,25 @@
             <!-- 特殊工种：循环顺序 -->
             <div class="card" id="cycle-config-card" style="display:none;">
                 <h3>排班循环顺序</h3>
-                <p class="text-muted">按顺序排列班次，系统自动循环。如：白→夜→休→休 = 4天一个循环。</p>
-                <div class="cycle-builder" id="cycle-builder">
+                <p class="text-muted">点击下方班次按钮，按想要的顺序添加到循环中。再次点击已选中的位置可移除。</p>
+
+                <!-- 可选班次面板 -->
+                <div class="cycle-palette" id="cycle-palette">
                     <!-- JS 动态填充 -->
                 </div>
-                <div class="cycle-controls">
+
+                <!-- 已选循环顺序 -->
+                <div class="cycle-sequence" id="cycle-sequence">
+                    <div class="cycle-empty-hint" id="cycle-empty-hint">👆 点击上方班次按钮开始设置排班循环</div>
+                </div>
+
+                <div class="cycle-actions">
+                    <button class="btn btn-outline btn-sm" id="btn-clear-cycle">🗑️ 清空重排</button>
                     <button class="btn btn-primary" id="btn-save-cycle">💾 保存循环顺序</button>
                 </div>
+
                 <div class="cycle-preview" id="cycle-preview">
-                    <h4>预览（未来7天）：</h4>
+                    <h4>预览（未来14天）：</h4>
                     <div class="preview-list" id="preview-list"></div>
                 </div>
             </div>
