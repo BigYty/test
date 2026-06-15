@@ -12,14 +12,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```powershell
 # 启动应用
-cd shift-alarm && python main.py
+cd PBclock && python main.py
 
 # 打包 exe
-cd shift-alarm && pyinstaller shift_alarm.spec --noconfirm
+cd PBclock && pyinstaller pbclock.spec --noconfirm
 
 # 测试节假日爬取（删缓存重爬）
 python -c "
-import os; os.remove(os.path.expanduser('~/AppData/Local/ShiftAlarm/shift_alarm.db'))
+import os; os.remove(os.path.expanduser('~/AppData/Local/PBclock/pbclock.db'))
 from db.repository import Repository; from core.holiday_service import HolidayService
 r=Repository(); r.init_tables(); r.seed_defaults()
 HolidayService(r).refresh_year(2026)
@@ -27,7 +27,7 @@ print('OK')
 "
 
 # 安装依赖
-pip install -r shift-alarm/requirements.txt
+pip install -r PBclock/requirements.txt
 ```
 
 ## 架构
@@ -51,7 +51,7 @@ pip install -r shift-alarm/requirements.txt
     ▼                     ▼
   SQLite          winotify (Windows 通知)
   (~/AppData/     pystray (系统托盘)
-  Local/ShiftAlarm/)
+  Local/PBclock/)
 ```
 
 `main.py` 入口流程：初始化 DB → ShiftEngine → AlarmScheduler → MainApp → pystray 托盘 → tkinter 主循环
@@ -126,7 +126,7 @@ pip install -r shift-alarm/requirements.txt
 3. **视图动态加载**：`importlib.import_module` 按需加载视图模块，`build(parent, app)` 统一接口
 4. **APScheduler DateTrigger**：排班每天不同，凌晨重算而非 CronTrigger
 5. **分钟数存储**：时间用相对分钟 (0-2879)，≥1440 即跨日
-6. **PyInstaller 单文件 exe**：`shift_alarm.spec` → `dist/ShiftAlarm.exe` (~41MB)
+6. **PyInstaller 单文件 exe**：`pbclock.spec` → `dist/PBclock.exe` (~41MB)
 7. **`after_save()` 统一钩子**：任何保存操作后触发 `reschedule_callback` + 视图刷新
 8. **tk.Frame 替代 tk.Button 显示颜色**：ttkbootstrap 主题下 `tk.Button(bg=)` 和 `ttk.Treeview tag_configure(background=)` 不可靠，改用 `tk.Frame(bg=color)` + `tk.Canvas` 渲染颜色
 9. **设计令牌（Design Tokens）**：`app.py` 定义统一的设计令牌通过 `app.design` dict 暴露给各视图。

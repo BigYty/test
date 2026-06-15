@@ -5,8 +5,8 @@ import os
 from threading import Lock
 
 
-DB_DIR = os.path.join(os.path.expanduser("~"), "AppData", "Local", "ShiftAlarm")
-DB_PATH = os.path.join(DB_DIR, "shift_alarm.db")
+DB_DIR = os.path.join(os.path.expanduser("~"), "AppData", "Local", "PBclock")
+DB_PATH = os.path.join(DB_DIR, "pbclock.db")
 
 
 class Database:

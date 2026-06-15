@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # ── 日志配置 ─────────────────────────────────────────
 
-log_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "ShiftAlarm")
+log_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "PBclock")
 os.makedirs(log_dir, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
@@ -41,7 +41,7 @@ def send_windows_notification(alarm_log):
         alarm_time_str = alarm_log.alarm_time.strftime("%H:%M") if alarm_log.alarm_time else ""
 
         toast = Notification(
-            app_id="ShiftAlarm",
+            app_id="PBclock",
             title=f"⏰ 排班闹钟 - {shift_name}",
             msg=f"您的 {shift_name} 将于 {alarm_time_str} 开始\n请做好准备！",
             duration="long",
@@ -80,7 +80,7 @@ def _daily_reschedule(scheduler, repo):
 def main():
     """主入口"""
     print("=" * 50)
-    print("  排班闹钟 v2.0")
+    print("  排班闹钟 v3.0")
     print("  Windows 11 排班提醒工具（原生桌面版）")
     print("=" * 50)
     print()

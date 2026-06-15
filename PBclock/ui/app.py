@@ -64,7 +64,7 @@ class MainApp(ttk.Window):
     """
 
     def __init__(self, repo, engine, scheduler, reschedule_callback):
-        super().__init__(themename="cosmo", size=(1100, 750), title="排版闹钟")
+        super().__init__(themename="cosmo", size=(1100, 750), title="排班闹钟")
 
         self.repo = repo
         self.engine = engine
@@ -121,13 +121,13 @@ class MainApp(ttk.Window):
 
         # 应用名
         tk.Label(
-            logo_frame, text="排版闹钟",
+            logo_frame, text="排班闹钟",
             font=("Microsoft YaHei UI", 15, "bold"),
             fg=TEXT_PRIMARY, bg=SIDEBAR_BG,
         ).pack(anchor="w")
 
         tk.Label(
-            logo_frame, text="Shift Alarm v2",
+            logo_frame, text="PBclock v3",
             font=("Segoe UI", 8),
             fg=TEXT_MUTED, bg=SIDEBAR_BG,
         ).pack(anchor="w")

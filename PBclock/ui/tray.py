@@ -40,7 +40,7 @@ def _get_icon_path() -> str:
     # 分针
     draw.line([32, 32, 42, 32], fill="#0078d4", width=3)
 
-    log_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "ShiftAlarm")
+    log_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "PBclock")
     icon_path = os.path.join(log_dir, "tray_icon.png")
     img.save(icon_path, "PNG")
 
@@ -85,7 +85,7 @@ def create_tray(root_app, on_open, on_quit):
     )
 
     icon = pystray.Icon(
-        "ShiftAlarm",
+        "PBclock",
         icon_img,
         "排班闹钟",
         menu,
