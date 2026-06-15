@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 排班闹钟 — Windows 11 原生桌面应用（tkinter + ttkbootstrap）。用户自定义班次循环，系统按排班发送 Windows 原生通知。支持中国法定节假日自动同步。
 
+使用了 `frontend-design` 设计技能（`claude plugin install frontend-design`）进行 UI 设计指导，遵循独特、有意的视觉设计原则。
+
 ## 常用命令
 
 ```powershell
@@ -126,3 +128,8 @@ pip install -r shift-alarm/requirements.txt
 5. **分钟数存储**：时间用相对分钟 (0-2879)，≥1440 即跨日
 6. **PyInstaller 单文件 exe**：`shift_alarm.spec` → `dist/ShiftAlarm.exe` (~41MB)
 7. **`after_save()` 统一钩子**：任何保存操作后触发 `reschedule_callback` + 视图刷新
+8. **tk.Frame 替代 tk.Button 显示颜色**：ttkbootstrap 主题下 `tk.Button(bg=)` 和 `ttk.Treeview tag_configure(background=)` 不可靠，改用 `tk.Frame(bg=color)` + `tk.Canvas` 渲染颜色
+9. **设计令牌（Design Tokens）**：`app.py` 定义统一的设计令牌通过 `app.design` dict 暴露给各视图。
+   - 现代 SaaS 风格：浅灰底 `#f1f5f9` + 白卡片 + 蓝强调 `#3b82f6` + 浅色侧边栏 `#f8fafc`
+   - 参考 Linear/Notion 美学：冷色调、极简、清晰层次
+10. **颜色渲染策略**：班次颜色通过 `tk.Frame(bg=)` + `tk.Canvas` 渲染，不依赖 ttk 主题的 background 支持。日历单元格色彩用 `lighten_color(hex, 0.25)` 适度减淡而非过度漂白

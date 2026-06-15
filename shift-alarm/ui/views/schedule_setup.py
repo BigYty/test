@@ -1,382 +1,288 @@
-"""排班设置视图 —— 工作模式切换、循环构建、日期设置、预览"""
+"""排班设置视图 — 工作模式、循环构建、日期设置、预览"""
 
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import date, timedelta
 
-from config.constants import (
-    ShiftType, WorkMode, SHIFT_NAMES, SHIFT_COLORS,
-    NORMAL_MODE_SHIFTS, SPECIAL_MODE_SHIFTS, DEFAULT_WEEKLY_PATTERN,
-)
+from config.constants import (ShiftType, WorkMode, SHIFT_NAMES, SHIFT_COLORS,
+                              NORMAL_MODE_SHIFTS, DEFAULT_WEEKLY_PATTERN)
 from config.settings import AppSettings
 from db.models import CyclePattern
 
 
 def build(parent: ttk.Frame, app):
-    """构建排班设置视图。"""
-    # ── 清空父容器 ──
     for w in parent.winfo_children():
         w.destroy()
 
-    # ── 加载当前设置 ──
+    d = app.design
     settings = app.repo.load_settings()
     cycle_patterns = app.repo.get_cycle_pattern()
 
-    # ── 容器变量 ──
     work_mode_var = tk.IntVar(value=int(settings.work_mode))
 
-    # ── 主容器 ──
-    main = ttk.Frame(parent, padding=(16, 12))
-    main.pack(fill=tk.BOTH, expand=True)
+    page = tk.Frame(parent, bg=d["page_bg"])
+    page.pack(fill=tk.BOTH, expand=True)
 
     # ── 标题 ──
-    title = ttk.Label(main, text="排班设置", font=("", 16, "bold"))
-    title.pack(anchor=tk.W, pady=(0, 16))
+    header = tk.Frame(page, bg=d["page_bg"])
+    header.pack(fill=tk.X, padx=24, pady=(20, 4))
+    tk.Label(header, text="排班设置",
+             font=("Microsoft YaHei UI", 20, "bold"),
+             fg=d["text_primary"], bg=d["page_bg"]).pack(side=tk.LEFT)
+    tk.Label(header, text="设置工作模式、循环顺序和起始日期",
+             font=("Microsoft YaHei UI", 10),
+             fg=d["text_secondary"], bg=d["page_bg"]).pack(side=tk.LEFT, padx=(12, 0))
 
-    # ══════════════════════════════════════════════════════
-    # 第 1 节：工作模式
-    # ══════════════════════════════════════════════════════
-    mode_frame = ttk.LabelFrame(main, text=" 工作模式 ", padding=(12, 10))
-    mode_frame.pack(fill=tk.X, pady=(0, 12))
+    # 可滚动内容区
+    canvas = tk.Canvas(page, bg=d["page_bg"], highlightthickness=0)
+    scrollbar = ttk.Scrollbar(page, orient="vertical", command=canvas.yview)
+    content = tk.Frame(canvas, bg=d["page_bg"])
+
+    content.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+    _canvas_window = canvas.create_window((0, 0), window=content, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(24, 0), pady=(12, 0))
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 24), pady=(12, 0))
+
+    # 让内嵌窗口宽度跟随 canvas
+    def _resize_inner(event):
+        canvas.itemconfig(_canvas_window, width=event.width)
+    canvas.bind("<Configure>", _resize_inner)
+
+    # 鼠标滚轮
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+    canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+    canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+    # ── 工作模式卡片 ──
+    mode_card = tk.Frame(content, bg=d["card_bg"], highlightthickness=1, highlightbackground=d["border"])
+    mode_card.pack(fill=tk.X, pady=(0, 12))
+
+    mode_inner = tk.Frame(mode_card, bg=d["card_bg"])
+    mode_inner.pack(fill=tk.X, padx=16, pady=12)
+
+    tk.Label(mode_inner, text="工作模式", font=("Microsoft YaHei UI", 12, "bold"),
+             fg=d["text_primary"], bg=d["card_bg"]).pack(anchor="w", pady=(0, 8))
 
     def on_mode_change():
-        new_mode = WorkMode(work_mode_var.get())
-        settings.work_mode = new_mode
+        settings.work_mode = WorkMode(work_mode_var.get())
         app.repo.save_settings(settings)
-        # 刷新视图以显示/隐藏相关组件
-        _refresh_mode_dependent_ui()
+        _refresh_mode_ui()
 
-    rb1 = ttk.Radiobutton(
-        mode_frame, text="正常工作表 (周循环)",
-        variable=work_mode_var, value=WorkMode.NORMAL.value,
-        command=on_mode_change,
-    )
-    rb1.pack(anchor=tk.W, pady=(0, 4))
+    ttk.Radiobutton(mode_inner, text="正常工作表 (周循环 + 法定节假日)",
+                    variable=work_mode_var, value=WorkMode.NORMAL.value,
+                    command=on_mode_change).pack(anchor="w", pady=(0, 3))
+    ttk.Radiobutton(mode_inner, text="特殊工种 (自定义循环顺序)",
+                    variable=work_mode_var, value=WorkMode.SPECIAL.value,
+                    command=on_mode_change).pack(anchor="w")
 
-    rb2 = ttk.Radiobutton(
-        mode_frame, text="特殊工种 (自定义循环)",
-        variable=work_mode_var, value=WorkMode.SPECIAL.value,
-        command=on_mode_change,
-    )
-    rb2.pack(anchor=tk.W)
+    # ── 循环构建卡片（仅特殊工种）─
+    cycle_card = tk.Frame(content, bg=d["card_bg"], highlightthickness=1, highlightbackground=d["border"])
 
-    # ══════════════════════════════════════════════════════
-    # 第 2 节：自定义循环（仅特殊工种）
-    # ══════════════════════════════════════════════════════
-    cycle_frame = ttk.LabelFrame(main, text=" 自定义循环顺序 ", padding=(12, 10))
-
-    # 创建 CycleBuilder（延迟导入避免循环依赖）
     from ui.widgets.cycle_builder import CycleBuilder
-    builder = CycleBuilder(cycle_frame, app)
-    builder.pack(fill=tk.BOTH, expand=True)
+    builder = CycleBuilder(cycle_card, app)
+    builder.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
     builder.set_pattern(cycle_patterns)
 
-    # ══════════════════════════════════════════════════════
-    # 第 3 节：起始设置
-    # ══════════════════════════════════════════════════════
-    start_frame = ttk.LabelFrame(main, text=" 排班起始设置 ", padding=(12, 10))
-    start_frame.pack(fill=tk.X, pady=(12, 12))
+    # ── 起始设置卡片 ──
+    start_card = tk.Frame(content, bg=d["card_bg"], highlightthickness=1, highlightbackground=d["border"])
+    start_card.pack(fill=tk.X, pady=(12, 12))
 
-    # ── 起始日期 ──
-    date_row = ttk.Frame(start_frame)
-    date_row.pack(fill=tk.X, pady=(0, 8))
+    start_inner = tk.Frame(start_card, bg=d["card_bg"])
+    start_inner.pack(fill=tk.X, padx=16, pady=12)
 
-    ttk.Label(date_row, text="起始日期:", width=14).pack(side=tk.LEFT)
-    start_date_str = settings.cycle_start_date or date.today().isoformat()
-    start_date_var = tk.StringVar(value=start_date_str)
-    date_entry = ttk.Entry(date_row, textvariable=start_date_var, width=14)
-    date_entry.pack(side=tk.LEFT, padx=(4, 0))
-    ttk.Label(
-        date_row, text="  格式: YYYY-MM-DD", foreground="gray"
-    ).pack(side=tk.LEFT)
+    tk.Label(start_inner, text="起始设置", font=("Microsoft YaHei UI", 12, "bold"),
+             fg=d["text_primary"], bg=d["card_bg"]).pack(anchor="w", pady=(0, 8))
 
-    # ── 起始循环位置 ──
-    pos_row = ttk.Frame(start_frame)
-    pos_row.pack(fill=tk.X)
+    # 日期
+    dr = tk.Frame(start_inner, bg=d["card_bg"])
+    dr.pack(fill=tk.X, pady=(0, 6))
+    tk.Label(dr, text="起始日期", fg=d["text_secondary"], bg=d["card_bg"],
+             font=("Microsoft YaHei UI", 9), width=12, anchor="e").pack(side=tk.LEFT)
+    sd_str = settings.cycle_start_date or date.today().isoformat()
+    sd_var = tk.StringVar(value=sd_str)
+    ttk.Entry(dr, textvariable=sd_var, width=14).pack(side=tk.LEFT, padx=(8, 6))
+    tk.Label(dr, text="YYYY-MM-DD", fg=d["text_muted"], bg=d["card_bg"],
+             font=("Segoe UI", 8)).pack(side=tk.LEFT)
 
-    ttk.Label(pos_row, text="起始循环位置:", width=14).pack(side=tk.LEFT)
+    # 起始位置
+    pr = tk.Frame(start_inner, bg=d["card_bg"])
+    pr.pack(fill=tk.X)
+    tk.Label(pr, text="起始循环位置", fg=d["text_secondary"], bg=d["card_bg"],
+             font=("Microsoft YaHei UI", 9), width=12, anchor="e").pack(side=tk.LEFT)
     pos_var = tk.StringVar()
-    pos_combo = ttk.Combobox(pos_row, textvariable=pos_var, state="readonly", width=30)
-    pos_combo.pack(side=tk.LEFT, padx=(4, 0))
+    pos_combo = ttk.Combobox(pr, textvariable=pos_var, state="readonly", width=30)
+    pos_combo.pack(side=tk.LEFT, padx=(8, 0))
 
     def _update_position_combo():
-        """根据当前循环模式更新位置下拉选项。"""
-        current_mode = WorkMode(work_mode_var.get())
+        wm = WorkMode(work_mode_var.get())
         pos_combo["values"] = []
-
-        if current_mode == WorkMode.SPECIAL:
-            pattern = builder.get_pattern()
-            if pattern:
-                values = []
-                for idx, shift_val in enumerate(pattern):
-                    st = ShiftType(shift_val)
-                    name = SHIFT_NAMES.get(st, "未知")
-                    values.append(f"第 {idx + 1} 天: {name}")
-                pos_combo["values"] = values
-                ref_idx = settings.cycle_reference_index
-                if 0 <= ref_idx < len(values):
-                    pos_var.set(values[ref_idx])
-                elif values:
-                    pos_var.set(values[0])
+        if wm == WorkMode.SPECIAL:
+            pat = builder.get_pattern()
+            if pat:
+                vals = [f"第 {i+1} 天: {SHIFT_NAMES.get(ShiftType(v), '?')}" for i, v in enumerate(pat)]
+                pos_combo["values"] = vals
+                ri = settings.cycle_reference_index
+                pos_var.set(vals[ri] if 0 <= ri < len(vals) else (vals[0] if vals else ""))
                 return
         else:
-            # 正常模式也显示一周的默认循环
-            values = []
-            for dow_idx in range(7):
-                st = DEFAULT_WEEKLY_PATTERN.get(dow_idx, ShiftType.REST)
-                name = SHIFT_NAMES.get(st, "未知")
-                weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-                values.append(f"{weekday_names[dow_idx]}: {name}")
-            pos_combo["values"] = values
-            ref_idx = settings.cycle_reference_index
-            if 0 <= ref_idx < len(values):
-                pos_var.set(values[ref_idx])
-            elif values:
-                pos_var.set(values[0])
+            wns = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+            vals = [f"{wns[i]}: {SHIFT_NAMES.get(DEFAULT_WEEKLY_PATTERN.get(i, ShiftType.REST), '?')}"
+                    for i in range(7)]
+            pos_combo["values"] = vals
+            ri = settings.cycle_reference_index
+            pos_var.set(vals[ri] if 0 <= ri < len(vals) else vals[0])
 
     _update_position_combo()
 
-    # ══════════════════════════════════════════════════════
-    # 第 4 节：14 天预览
-    # ══════════════════════════════════════════════════════
-    preview_frame = ttk.LabelFrame(main, text=" 未来 14 天预览 ", padding=(12, 10))
-    preview_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
+    # ── 预览卡片 ──
+    preview_card = tk.Frame(content, bg=d["card_bg"], highlightthickness=1, highlightbackground=d["border"])
+    preview_card.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
 
-    # 预览表格容器
-    preview_table = ttk.Frame(preview_frame)
-    preview_table.pack(fill=tk.BOTH, expand=True)
+    pv_header = tk.Frame(preview_card, bg=d["card_bg"])
+    pv_header.pack(fill=tk.X, padx=16, pady=(12, 0))
+    tk.Label(pv_header, text="未来 14 天预览", font=("Microsoft YaHei UI", 12, "bold"),
+             fg=d["text_primary"], bg=d["card_bg"]).pack(side=tk.LEFT)
+    refresh_preview_btn = ttk.Button(pv_header, text="刷新预览")
+    refresh_preview_btn.pack(side=tk.RIGHT)
 
-    def _resolve_ref_index_from_combo() -> int:
-        """从 combobox 当前选择解析 cycle_reference_index。"""
-        pos_text = pos_var.get()
-        current_mode = WorkMode(work_mode_var.get())
-        if current_mode == WorkMode.SPECIAL:
-            pattern = builder.get_pattern()
-            if pattern:
-                for idx, shift_val in enumerate(pattern):
-                    st = ShiftType(shift_val)
-                    name = SHIFT_NAMES.get(st, "未知")
-                    expected = f"第 {idx + 1} 天: {name}"
-                    if pos_text == expected:
+    tk.Frame(preview_card, bg=d["border"], height=1).pack(fill=tk.X, padx=16, pady=(8, 0))
+
+    preview_table = tk.Frame(preview_card, bg=d["card_bg"])
+    preview_table.pack(fill=tk.BOTH, expand=True, padx=16, pady=(4, 12))
+
+    def _resolve_ref_index():
+        pt = pos_var.get()
+        wm = WorkMode(work_mode_var.get())
+        if wm == WorkMode.SPECIAL:
+            pat = builder.get_pattern()
+            if pat:
+                for idx, sv in enumerate(pat):
+                    if pt == f"第 {idx+1} 天: {SHIFT_NAMES.get(ShiftType(sv), '?')}":
                         return idx
         else:
-            weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+            wns = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
             for idx in range(7):
-                st = DEFAULT_WEEKLY_PATTERN.get(idx, ShiftType.REST)
-                name = SHIFT_NAMES.get(st, "未知")
-                expected = f"{weekday_names[idx]}: {name}"
-                if pos_text == expected:
+                if pt == f"{wns[idx]}: {SHIFT_NAMES.get(DEFAULT_WEEKLY_PATTERN.get(idx, ShiftType.REST), '?')}":
                     return idx
         return 0
 
     def _refresh_preview():
-        """刷新 14 天预览。"""
         for w in preview_table.winfo_children():
             w.destroy()
 
-        # 解析起始日期
-        s_date_str = start_date_var.get().strip()
         try:
-            s_date = date.fromisoformat(s_date_str)
+            s_date = date.fromisoformat(sd_var.get().strip())
         except (ValueError, TypeError):
             s_date = date.today()
 
-        current_mode = WorkMode(work_mode_var.get())
+        wm = WorkMode(work_mode_var.get())
+        ref_idx = _resolve_ref_index()
 
-        # 从 combobox 当前选择解析 ref_index
-        ref_index = _resolve_ref_index_from_combo()
-
-        # 构建 CyclePattern 列表
-        if current_mode == WorkMode.SPECIAL:
-            raw_pattern = builder.get_pattern()
-            if not raw_pattern:
-                # 无循环时显示提示
-                ttk.Label(
-                    preview_table,
-                    text="请先设置自定义循环顺序",
-                    foreground="gray",
-                ).pack(padx=8, pady=16)
+        if wm == WorkMode.SPECIAL:
+            rp = builder.get_pattern()
+            if not rp:
+                tk.Label(preview_table, text="请先设置自定义循环顺序",
+                         fg=d["text_muted"], bg=d["card_bg"],
+                         font=("Microsoft YaHei UI", 10)).pack(pady=20)
                 return
-            cycles = [
-                CyclePattern(position=i, shift_type=ShiftType(v))
-                for i, v in enumerate(raw_pattern)
-            ]
+            cycles = [CyclePattern(position=i, shift_type=ShiftType(v)) for i, v in enumerate(rp)]
         else:
-            raw_pattern = [
-                DEFAULT_WEEKLY_PATTERN.get(d, ShiftType.REST) for d in range(7)
-            ]
-            cycles = [
-                CyclePattern(position=i, shift_type=st)
-                for i, st in enumerate(raw_pattern)
-            ]
+            cycles = [CyclePattern(position=i, shift_type=st) for i, st in
+                      sorted(DEFAULT_WEEKLY_PATTERN.items())]
 
-        # 表头
-        header_frame = ttk.Frame(preview_table)
-        header_frame.pack(fill=tk.X, pady=(0, 4))
+        # 缩略表头
+        hdr = tk.Frame(preview_table, bg="#f8fafc")
+        hdr.pack(fill=tk.X)
+        for txt, wd in [("日期", 12), ("星期", 6), ("班次", 10), ("时间", 20)]:
+            tk.Label(hdr, text=txt, font=("Microsoft YaHei UI", 9, "bold"),
+                     fg=d["text_secondary"], bg="#f8fafc", width=wd, anchor="w").pack(side=tk.LEFT, padx=2)
 
-        headers = [
-            ("日期", 12), ("星期", 6), ("班次", 10), ("时间范围", 20)
-        ]
-        for text, width in headers:
-            lbl = ttk.Label(header_frame, text=text, width=width,
-                          font=("", 9, "bold"))
-            lbl.pack(side=tk.LEFT, padx=2)
+        wns = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
-        ttk.Separator(preview_table, orient=tk.HORIZONTAL).pack(fill=tk.X)
-
-        # 数据行
-        weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-
-        for day_offset in range(14):
-            current_date = s_date + timedelta(days=day_offset)
-
-            # 计算班次
+        for do in range(14):
+            cd = s_date + timedelta(days=do)
             try:
-                shift, is_holiday = app.engine.get_shift_for_date(
-                    current_date, current_mode,
-                    s_date, cycles, ref_index,
-                )
+                shift, is_hol = app.engine.get_shift_for_date(cd, wm, s_date, cycles, ref_idx)
             except Exception:
-                shift = ShiftType.REST
-                is_holiday = False
+                shift, is_hol = ShiftType.REST, False
 
-            shift_name = SHIFT_NAMES.get(shift, "未知")
-            shift_color = SHIFT_COLORS.get(shift, "#CCCCCC")
-            weekday = weekday_names[current_date.weekday()]
+            sname = SHIFT_NAMES.get(shift, "?")
+            sc = SHIFT_COLORS.get(shift, "#ccc")
+            scfg = app.repo.get_shift(shift)
+            from core.time_utils import format_shift_time_range
+            tr = format_shift_time_range(scfg.start_time, scfg.end_time) if scfg else "-"
+            wd_name = wns[cd.weekday()]
 
-            # 获取时间范围
-            shift_config = app.repo.get_shift(shift)
-            if shift_config:
-                from core.time_utils import format_shift_time_range
-                time_range = format_shift_time_range(
-                    shift_config.start_time, shift_config.end_time
-                )
-            else:
-                time_range = "-"
+            row = tk.Frame(preview_table, bg=d["card_bg"] if do % 2 == 0 else "#f8fafc")
+            row.pack(fill=tk.X)
 
-            # 行
-            row_frame = ttk.Frame(preview_table)
-            row_frame.pack(fill=tk.X, pady=1)
+            tk.Label(row, text=cd.isoformat(), fg=d["text_primary"], bg=row["bg"],
+                     font=("Segoe UI", 9), width=12, anchor="w").pack(side=tk.LEFT, padx=2)
+            tk.Label(row, text=wd_name, fg=d["text_secondary"], bg=row["bg"],
+                     font=("Microsoft YaHei UI", 9), width=6, anchor="w").pack(side=tk.LEFT, padx=2)
 
-            # 日期列
-            date_lbl = ttk.Label(
-                row_frame,
-                text=current_date.isoformat(),
-                width=12,
-            )
-            date_lbl.pack(side=tk.LEFT, padx=2)
+            sf = tk.Frame(row, bg=row["bg"])
+            sf.pack(side=tk.LEFT, padx=2)
+            dot = tk.Canvas(sf, width=12, height=12, bg=row["bg"], highlightthickness=0)
+            dot.pack(side=tk.LEFT, padx=(0, 4))
+            dot.create_oval(1, 1, 11, 11, fill=sc, outline="")
+            tk.Label(sf, text=sname, fg=d["text_primary"], bg=row["bg"],
+                     font=("Microsoft YaHei UI", 9), width=10, anchor="w").pack(side=tk.LEFT)
 
-            # 星期列
-            week_lbl = ttk.Label(row_frame, text=weekday, width=6)
-            week_lbl.pack(side=tk.LEFT, padx=2)
+            tk.Label(row, text=tr, fg=d["text_muted"], bg=row["bg"],
+                     font=("Segoe UI", 9), width=20, anchor="w").pack(side=tk.LEFT, padx=2)
 
-            # 班次列（带颜色标识）
-            shift_frame = tk.Frame(row_frame)
-            shift_frame.pack(side=tk.LEFT, padx=2)
-
-            color_indicator = tk.Canvas(
-                shift_frame, width=14, height=14,
-                highlightthickness=0,
-            )
-            color_indicator.pack(side=tk.LEFT)
-            color_indicator.create_oval(
-                1, 1, 13, 13, fill=shift_color, outline=""
-            )
-
-            shift_lbl = ttk.Label(shift_frame, text=shift_name, width=10)
-            shift_lbl.pack(side=tk.LEFT, padx=(4, 0))
-
-            # 时间范围列
-            time_lbl = ttk.Label(row_frame, text=time_range, width=20)
-            time_lbl.pack(side=tk.LEFT, padx=2)
-
-            # 节假日标记
-            if is_holiday:
-                holiday_mark = ttk.Label(
-                    row_frame, text="[休]", foreground="red", width=4
-                )
-                holiday_mark.pack(side=tk.LEFT)
-
-    # ── 预览区域按钮 ──
-    preview_btn_frame = ttk.Frame(preview_frame)
-    preview_btn_frame.pack(fill=tk.X, pady=(8, 0))
-
-    ttk.Button(
-        preview_btn_frame, text="刷新预览", command=_refresh_preview,
-    ).pack(side=tk.LEFT)
+            if is_hol:
+                tk.Label(row, text="休", fg="#dc2626", bg=row["bg"],
+                         font=("Microsoft YaHei UI", 9, "bold"), width=3).pack(side=tk.LEFT)
 
     _refresh_preview()
 
-    # ══════════════════════════════════════════════════════
-    # 底部保存按钮
-    # ══════════════════════════════════════════════════════
-    bottom = ttk.Frame(main)
-    bottom.pack(fill=tk.X, pady=(4, 0))
+    # 绑定刷新按钮（必须在函数定义之后）
+    refresh_preview_btn.configure(command=_refresh_preview)
+
+    # ── 模式 UI 切换 ──
+    def _refresh_mode_ui():
+        if WorkMode(work_mode_var.get()) == WorkMode.SPECIAL:
+            cycle_card.pack(fill=tk.BOTH, expand=True, pady=(0, 12), before=start_card)
+        else:
+            cycle_card.pack_forget()
+        _update_position_combo()
+        _refresh_preview()
+
+    _refresh_mode_ui()
+
+    # ── 保存按钮 ──
+    bottom = tk.Frame(page, bg=d["page_bg"])
+    bottom.pack(fill=tk.X, padx=24, pady=(0, 16))
 
     def _on_save():
-        """保存所有排班设置。"""
-        current_mode = WorkMode(work_mode_var.get())
-
-        # 解析起始日期
-        s_date_str = start_date_var.get().strip()
+        wm = WorkMode(work_mode_var.get())
         try:
-            s_date = date.fromisoformat(s_date_str)
+            s_date = date.fromisoformat(sd_var.get().strip())
         except (ValueError, TypeError):
             messagebox.showerror("格式错误", "起始日期格式无效，请使用 YYYY-MM-DD 格式。")
             return
 
-        # 解析起始循环位置
-        ref_index = _resolve_ref_index_from_combo()
+        ref_idx = _resolve_ref_index()
+        ns = AppSettings(work_mode=wm, cycle_start_date=s_date.isoformat(),
+                         cycle_reference_index=ref_idx,
+                         auto_start=settings.auto_start, alarm_sound_path=settings.alarm_sound_path,
+                         alarm_volume=settings.alarm_volume, snooze_minutes=settings.snooze_minutes,
+                         first_run=settings.first_run)
+        app.repo.save_settings(ns)
 
-        # 保存设置
-        new_settings = AppSettings(
-            work_mode=current_mode,
-            cycle_start_date=s_date_str,
-            cycle_reference_index=ref_index,
-            auto_start=settings.auto_start,
-            alarm_sound_path=settings.alarm_sound_path,
-            alarm_volume=settings.alarm_volume,
-            snooze_minutes=settings.snooze_minutes,
-            first_run=settings.first_run,
-        )
-        app.repo.save_settings(new_settings)
-
-        # 保存循环模式（特殊工种）
-        if current_mode == WorkMode.SPECIAL:
-            raw_pattern = builder.get_pattern()
-            cycles = [
-                CyclePattern(position=i, shift_type=ShiftType(v))
-                for i, v in enumerate(raw_pattern)
-            ]
+        if wm == WorkMode.SPECIAL:
+            cycles = [CyclePattern(position=i, shift_type=ShiftType(v))
+                      for i, v in enumerate(builder.get_pattern())]
         else:
-            cycles = [
-                CyclePattern(position=d, shift_type=st)
-                for d, st in sorted(DEFAULT_WEEKLY_PATTERN.items())
-            ]
+            cycles = [CyclePattern(position=d, shift_type=st)
+                      for d, st in sorted(DEFAULT_WEEKLY_PATTERN.items())]
         app.repo.save_cycle_pattern(cycles)
-
-        # 触发后处理
         app.after_save()
         messagebox.showinfo("保存成功", "排班设置已保存。")
 
-    ttk.Button(
-        bottom, text="保存设置", command=_on_save,
-    ).pack(side=tk.RIGHT)
-
-    # ══════════════════════════════════════════════════════
-    # 模式切换时的 UI 刷新
-    # ══════════════════════════════════════════════════════
-    def _refresh_mode_dependent_ui():
-        """根据当前工作模式显示/隐藏相关组件。"""
-        current_mode = WorkMode(work_mode_var.get())
-        if current_mode == WorkMode.SPECIAL:
-            cycle_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 12),
-                           before=start_frame)
-        else:
-            cycle_frame.pack_forget()
-
-        _update_position_combo()
-        _refresh_preview()
-
-    # 初始状态
-    _refresh_mode_dependent_ui()
+    ttk.Button(bottom, text="保存设置", command=_on_save).pack(side=tk.RIGHT)

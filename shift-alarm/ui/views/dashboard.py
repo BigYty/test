@@ -1,4 +1,4 @@
-"""仪表盘视图 —— 应用首页，展示今日/明日班次、工作模式和月历"""
+"""仪表盘视图 — 现代 SaaS 风格"""
 
 from __future__ import annotations
 
@@ -7,132 +7,92 @@ from datetime import date
 from tkinter import messagebox, ttk
 from typing import Any
 
-from config.constants import (
-    SHIFT_COLORS,
-    SHIFT_NAMES,
-    ShiftType,
-    WorkMode,
-)
+from config.constants import SHIFT_COLORS, SHIFT_NAMES, ShiftType, WorkMode
 from core.time_utils import format_shift_time_range
 from ui.widgets.calendar_grid import CalendarGrid, lighten_color
 
 
 def build(parent: ttk.Frame, app: Any) -> None:
-    """在 parent_frame 中构建仪表盘视图的 UI。
-
-    Args:
-        parent: 父容器 ttk.Frame
-        app: MainApp 实例，提供 repo / engine / scheduler / show_view / after_save 等
-    """
-    # 清理已有内容（支持 refresh_current_view）
     for w in parent.winfo_children():
         w.destroy()
 
-    # ── 顶部标题栏 ──────────────────────────────────
-    _build_title_bar(parent, app)
+    d = app.design
+    today = date.today()
 
-    # ── 今日 / 明日班次卡片 ─────────────────────────
-    cards_frame = ttk.Frame(parent)
-    cards_frame.pack(fill="x", pady=(8, 4))
-    cards_frame.columnconfigure(0, weight=1)
-    cards_frame.columnconfigure(1, weight=1)
+    # ── 页面容器 ──
+    page = tk.Frame(parent, bg=d["page_bg"])
+    page.pack(fill=tk.BOTH, expand=True)
 
-    _build_shift_card(cards_frame, app, col=0, label="今日班次", shift_getter=_get_today)
-    _build_shift_card(cards_frame, app, col=1, label="明日班次", shift_getter=_get_tomorrow)
+    # ── 顶部标题栏 ──
+    header = tk.Frame(page, bg=d["page_bg"])
+    header.pack(fill=tk.X, padx=24, pady=(20, 0))
 
-    # ── 工作模式指示 ────────────────────────────────
-    _build_mode_indicator(parent, app)
+    tk.Label(header, text="工作台",
+             font=("Microsoft YaHei UI", 20, "bold"),
+             fg=d["text_primary"], bg=d["page_bg"]).pack(side=tk.LEFT)
 
-    # ── 月历 ────────────────────────────────────────
-    cal_container = ttk.Frame(parent)
-    cal_container.pack(fill="both", expand=True, pady=(8, 0))
-    cal_container.columnconfigure(0, weight=1)
-    cal_container.rowconfigure(0, weight=1)
+    # 当前日期
+    weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    wd = weekday_names[today.weekday()]
+    tk.Label(header,
+             text=f"{today.year}年{today.month}月{today.day}日 {wd}",
+             font=("Microsoft YaHei UI", 11),
+             fg=d["text_secondary"], bg=d["page_bg"]).pack(side=tk.LEFT, padx=(16, 0))
 
-    cal = CalendarGrid(cal_container, app)
-    cal.grid(row=0, column=0, sticky="nsew")
-    # 将 calendar 引用挂在 parent 上供外部刷新使用
+    # 模式标签
+    settings = _get_settings(app)
+    mode = settings.work_mode
+    mode_text = "正常工作表" if mode == WorkMode.NORMAL else "特殊工种"
+    mode_color = d["success"] if mode == WorkMode.NORMAL else "#7c3aed"
+
+    mode_tag = tk.Frame(header, bg=_lighten_hex(mode_color, 0.88))
+    mode_tag.pack(side=tk.RIGHT)
+    tk.Label(mode_tag, text=f"  {mode_text}  ",
+             fg=mode_color, bg=_lighten_hex(mode_color, 0.88),
+             font=("Microsoft YaHei UI", 9, "bold")).pack(padx=8, pady=2)
+
+    # 刷新节假日
+    def _refresh_holidays():
+        try:
+            from core.holiday_service import HolidayService
+            HolidayService(app.repo).refresh_year(date.today().year)
+            messagebox.showinfo("完成", "节假日数据已刷新。")
+            app.refresh_current_view()
+        except Exception as e:
+            messagebox.showerror("失败", str(e))
+
+    ttk.Button(header, text="刷新节假日", command=_refresh_holidays).pack(side=tk.RIGHT, padx=(0, 12))
+
+    # ── 今日/明日卡片行 ──
+    cards_row = tk.Frame(page, bg=d["page_bg"])
+    cards_row.pack(fill=tk.X, padx=24, pady=(16, 0))
+
+    _build_day_card(cards_row, app, "left", "今日班次", _get_today(app))
+    _build_day_card(cards_row, app, "right", "明日班次", _get_tomorrow(app))
+
+    # ── 月历 ──
+    cal_section = tk.Frame(page, bg=d["card_bg"], highlightthickness=1, highlightbackground=d["border"])
+    cal_section.pack(fill=tk.BOTH, expand=True, padx=24, pady=(16, 20))
+
+    cal_header = tk.Frame(cal_section, bg=d["card_bg"])
+    cal_header.pack(fill=tk.X, padx=16, pady=(12, 0))
+    tk.Label(cal_header, text="月度排班",
+             font=("Microsoft YaHei UI", 13, "bold"),
+             fg=d["text_primary"], bg=d["card_bg"]).pack(side=tk.LEFT)
+
+    cal = CalendarGrid(cal_section, app)
+    cal.pack(fill=tk.BOTH, expand=True, padx=12, pady=(4, 12))
     parent._calendar = cal
 
 
 # ═══════════════════════════════════════════════════════
-# 内部辅助
+# 今日/明日卡片
 # ═══════════════════════════════════════════════════════
 
-def _get_settings(app: Any):
-    """安全加载应用设置"""
-    from config.settings import AppSettings
+def _build_day_card(parent: tk.Frame, app: Any, side: str, label: str, sd):
+    d = app.design
+
     try:
-        return app.repo.load_settings()
-    except Exception:
-        return AppSettings()
-
-
-def _get_today(app: Any):
-    """获取今日排班 ScheduleDay"""
-    settings = _get_settings(app)
-    try:
-        cycle_start = date.fromisoformat(settings.cycle_start_date) if settings.cycle_start_date else date.today()
-    except ValueError:
-        cycle_start = date.today()
-    cycle_pattern = app.repo.get_cycle_pattern()
-    return app.engine.get_today_shift(
-        settings.work_mode, cycle_start, cycle_pattern,
-        settings.cycle_reference_index,
-    )
-
-
-def _get_tomorrow(app: Any):
-    """获取明日排班 ScheduleDay"""
-    settings = _get_settings(app)
-    try:
-        cycle_start = date.fromisoformat(settings.cycle_start_date) if settings.cycle_start_date else date.today()
-    except ValueError:
-        cycle_start = date.today()
-    cycle_pattern = app.repo.get_cycle_pattern()
-    return app.engine.get_tomorrow_shift(
-        settings.work_mode, cycle_start, cycle_pattern,
-        settings.cycle_reference_index,
-    )
-
-
-# ─── 标题栏 ──────────────────────────────────────────
-
-def _build_title_bar(parent: ttk.Frame, app: Any) -> None:
-    bar = ttk.Frame(parent)
-    bar.pack(fill="x")
-
-    ttk.Label(bar, text="工作台", font=("TkDefaultFont", 16, "bold")).pack(side="left")
-
-    def _refresh_holidays():
-        today = date.today()
-        try:
-            from core.holiday_service import HolidayService
-            svc = HolidayService(app.repo)
-            svc.refresh_year(today.year)
-            messagebox.showinfo("刷新完成", f"{today.year} 年节假日数据已更新。")
-            app.refresh_current_view()
-        except Exception as e:
-            messagebox.showerror("刷新失败", str(e))
-
-    ttk.Button(bar, text="刷新节假日", command=_refresh_holidays).pack(side="right")
-
-
-# ─── 班次卡片 ────────────────────────────────────────
-
-def _build_shift_card(
-    parent: ttk.Frame,
-    app: Any,
-    col: int,
-    label: str,
-    shift_getter,
-) -> None:
-    """构建一个今日/明日班次卡片。
-
-    卡片左边框使用班次颜色标识。
-    """
-    try:
-        sd = shift_getter(app)
         shift_type = sd.shift_type
         is_holiday = sd.is_holiday
     except Exception:
@@ -141,81 +101,87 @@ def _build_shift_card(
 
     color = SHIFT_COLORS.get(shift_type, "#999999")
     shift_name = SHIFT_NAMES.get(shift_type, "未知")
-    bg_color = lighten_color(color, 0.75)
-
-    # 外层容器
-    card = ttk.LabelFrame(parent, text=label, padding=(0, 4))
-    card.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 4, 4 if col == 0 else 0))
-
-    inner = tk.Frame(card, bg=bg_color)
-    inner.pack(fill="both", expand=True, padx=1, pady=1)
-
-    # 左边框色条
-    color_bar = tk.Frame(inner, bg=color, width=5)
-    color_bar.pack(side="left", fill="y")
-
-    # 内容区
-    content = tk.Frame(inner, bg=bg_color)
-    content.pack(side="left", fill="both", expand=True, padx=10, pady=8)
-
-    # 班次名称（大字）
-    name_lbl = tk.Label(
-        content, text=shift_name,
-        bg=bg_color, fg=color,
-        font=("TkDefaultFont", 22, "bold"),
-        anchor="w",
-    )
-    name_lbl.pack(anchor="w")
 
     # 时间范围
+    time_range = "—"
     try:
-        shift_config = app.repo.get_shift(shift_type)
-        time_range = format_shift_time_range(shift_config.start_time, shift_config.end_time)
+        sc = app.repo.get_shift(shift_type)
+        if sc and sc.start_time != sc.end_time:
+            time_range = format_shift_time_range(sc.start_time, sc.end_time)
     except Exception:
-        time_range = "—"
+        pass
 
-    time_lbl = tk.Label(
-        content, text=time_range,
-        bg=bg_color, fg="#555555",
-        font=("TkDefaultFont", 10),
-        anchor="w",
-    )
-    time_lbl.pack(anchor="w", pady=(2, 0))
+    # 卡片 — 白色底，彩色顶条
+    card_w = tk.Frame(parent, bg=d["card_bg"], highlightthickness=1, highlightbackground=d["border"])
+    pad_x = (0, 6) if side == "left" else (6, 0)
+    card_w.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=pad_x)
 
-    # 节假日标记
+    # 顶部 4px 彩色条
+    top_bar = tk.Frame(card_w, bg=color, height=4)
+    top_bar.pack(fill=tk.X)
+    top_bar.pack_propagate(False)
+
+    # 内容
+    inner = tk.Frame(card_w, bg=d["card_bg"])
+    inner.pack(fill=tk.BOTH, expand=True, padx=20, pady=16)
+
+    # 标签
+    tk.Label(inner, text=label,
+             font=("Microsoft YaHei UI", 10),
+             fg=d["text_secondary"], bg=d["card_bg"]).pack(anchor="w")
+
+    # 班次名 — 大号彩色
+    tk.Label(inner, text=shift_name,
+             font=("Microsoft YaHei UI", 26, "bold"),
+             fg=color, bg=d["card_bg"]).pack(anchor="w", pady=(4, 2))
+
+    # 时间
+    tk.Label(inner, text=time_range,
+             font=("Segoe UI", 11),
+             fg=d["text_muted"], bg=d["card_bg"]).pack(anchor="w")
+
     if is_holiday:
-        holiday_lbl = tk.Label(
-            content, text="🎌 节假日",
-            bg=bg_color, fg="#E65100",
-            font=("TkDefaultFont", 9, "bold"),
-            anchor="w",
-        )
-        holiday_lbl.pack(anchor="w", pady=(4, 0))
+        tag = tk.Frame(inner, bg="#fef2f2")
+        tag.pack(anchor="w", pady=(8, 0))
+        tk.Label(tag, text="  法定节假日  ",
+                 fg="#dc2626", bg="#fef2f2",
+                 font=("Microsoft YaHei UI", 8, "bold")).pack(padx=6, pady=2)
 
 
-# ─── 工作模式指示 ────────────────────────────────────
+# ═══════════════════════════════════════════════════════
+# 辅助
+# ═══════════════════════════════════════════════════════
 
-def _build_mode_indicator(parent: ttk.Frame, app: Any) -> None:
-    settings = _get_settings(app)
-    mode = settings.work_mode
-    mode_text = "正常工作表" if mode == WorkMode.NORMAL else "特殊工种"
-    mode_color = "#1976D2" if mode == WorkMode.NORMAL else "#7B1FA2"
-
-    indicator = ttk.Frame(parent)
-    indicator.pack(fill="x", pady=(6, 0))
-
-    ttk.Label(indicator, text="当前模式：", font=("TkDefaultFont", 9)).pack(side="left")
-
-    mode_lbl = tk.Label(
-        indicator, text=mode_text,
-        fg=mode_color, font=("TkDefaultFont", 9, "bold"),
-        bg=_get_default_bg(),
-    )
-    mode_lbl.pack(side="left")
-
-
-def _get_default_bg() -> str:
+def _get_settings(app):
+    from config.settings import AppSettings
     try:
-        return ttk.Style().lookup("TFrame", "background") or "#f0f0f0"
+        return app.repo.load_settings()
     except Exception:
-        return "#f0f0f0"
+        return AppSettings()
+
+
+def _get_today(app):
+    settings = _get_settings(app)
+    try:
+        cs = date.fromisoformat(settings.cycle_start_date) if settings.cycle_start_date else date.today()
+    except ValueError:
+        cs = date.today()
+    return app.engine.get_today_shift(
+        settings.work_mode, cs, app.repo.get_cycle_pattern(), settings.cycle_reference_index)
+
+
+def _get_tomorrow(app):
+    settings = _get_settings(app)
+    try:
+        cs = date.fromisoformat(settings.cycle_start_date) if settings.cycle_start_date else date.today()
+    except ValueError:
+        cs = date.today()
+    return app.engine.get_tomorrow_shift(
+        settings.work_mode, cs, app.repo.get_cycle_pattern(), settings.cycle_reference_index)
+
+
+def _lighten_hex(hex_color: str, factor: float = 0.7) -> str:
+    hex_color = hex_color.lstrip("#")
+    r = int(hex_color[0:2], 16); g = int(hex_color[2:4], 16); b = int(hex_color[4:6], 16)
+    r = int(r + (255 - r) * factor); g = int(g + (255 - g) * factor); b = int(b + (255 - b) * factor)
+    return f"#{r:02x}{g:02x}{b:02x}"

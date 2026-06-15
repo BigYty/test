@@ -195,4 +195,5 @@ class AlarmScheduler:
             "alarm_time": row["alarm_time"],
             "shift_name": row["shift_name"] or ShiftType(row["shift_type"]).name,
             "shift_type": row["shift_type"],
+            "status": row["status"],
         } for row in rows]
